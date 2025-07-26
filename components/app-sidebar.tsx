@@ -1,6 +1,6 @@
 "use client"
 
-import { Calendar, Users, Upload, BookOpen } from "lucide-react"
+import { Calendar, Users, Upload, BookOpen, Home } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 
@@ -16,26 +16,35 @@ import {
   SidebarHeader,
 } from "@/components/ui/sidebar"
 
-const items = [
-  {
-    title: "Weekly Planner",
-    url: "/dashboard",
-    icon: Calendar,
-  },
-  {
-    title: "Students",
-    url: "/dashboard/students",
-    icon: Users,
-  },
-  {
-    title: "Upload Textbook",
-    url: "/dashboard/upload",
-    icon: Upload,
-  },
-]
-
 export function AppSidebar() {
   const pathname = usePathname()
+  
+  // Extract classroom ID from pathname if we're in a classroom dashboard
+  const classroomMatch = pathname.match(/\/dashboard\/([^\/]+)/)
+  const classroomId = classroomMatch ? classroomMatch[1] : null
+
+  const items = [
+    {
+      title: "Classrooms",
+      url: "/classroom",
+      icon: Home,
+    },
+    {
+      title: "Weekly Planner",
+      url: classroomId ? `/dashboard/${classroomId}` : "/dashboard",
+      icon: Calendar,
+    },
+    {
+      title: "Students",
+      url: classroomId ? `/dashboard/${classroomId}/students` : "/dashboard/students",
+      icon: Users,
+    },
+    {
+      title: "Upload Textbook",
+      url: classroomId ? `/dashboard/${classroomId}/upload` : "/dashboard/upload",
+      icon: Upload,
+    },
+  ]
 
   return (
     <Sidebar className="border-r border-gray-200">
@@ -54,7 +63,7 @@ export function AppSidebar() {
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton
                     asChild
-                    isActive={pathname === item.url}
+                    isActive={pathname === item.url || (item.url === "/dashboard" && pathname.startsWith("/dashboard/"))}
                     className="data-[active=true]:bg-blue-100 data-[active=true]:text-blue-900"
                   >
                     <Link href={item.url}>
