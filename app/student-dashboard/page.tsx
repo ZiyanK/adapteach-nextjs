@@ -137,25 +137,46 @@ export default function StudentDashboardPage() {
   const handleAssessmentSubmit = async (answers: Record<number, string>) => {
     setSubmittingAssessment(true);
     try {
-      // Here you would typically send the answers to your backend
-      console.log('Assessment answers:', answers);
+      const selectedPlan = getSelectedDayPlan();
+      const assessment = selectedPlan?.assessment;
       
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // You can add actual API call here:
-      // const response = await fetch(`${backendUrl}/api/student/assessment-submit`, {
-      //   method: 'POST',
-      //   headers: AuthService.getAuthHeaders(),
-      //   body: JSON.stringify({
-      //     lesson_plan_id: getSelectedDayPlan()?.lesson_plan_id,
-      //     day: selectedDay,
-      //     answers: answers
-      //   }),
-      // });
+      if (!assessment) {
+        throw new Error('No assessment data available');
+      }
+
+      // Create the request body with original assessment and user answers
+      const requestBody = {
+        student_lesson_plan_id: selectedPlan.id,
+        assessment: assessment.map((question, index) => ({
+          ...question,
+          user_answer: answers[index] || ''
+        }))
+      };
+
+      console.log('Submitting assessment:', requestBody);
+
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
+      if (!backendUrl) {
+        throw new Error("NEXT_PUBLIC_BACKEND_URL environment variable is not set");
+      }
+
+      const response = await fetch(`${backendUrl}/api/student/assessment-eval`, {
+        method: 'POST',
+        headers: AuthService.getAuthHeaders(),
+        body: JSON.stringify(requestBody),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || errorData.message || `Assessment submission failed: ${response.status}`);
+      }
+
+      const result = await response.json();
+      console.log('Assessment evaluation result:', result);
       
     } catch (error) {
       console.error('Error submitting assessment:', error);
+      // You might want to show an error toast or message to the user here
     } finally {
       setSubmittingAssessment(false);
     }
