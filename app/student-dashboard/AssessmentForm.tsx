@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Textarea } from '@/components/ui/textarea';
-import { CheckCircle, Circle, Send, AlertCircle } from 'lucide-react';
+import { CheckCircle, Circle, Send, AlertCircle, Languages } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
 interface AssessmentQuestion {
@@ -70,7 +70,20 @@ export default function AssessmentForm({ questions, onSubmit, isSubmitting = fal
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="max-w-4xl mx-auto space-y-6 relative">
+      {/* Translate Button */}
+      <div className="absolute top-4 right-4 z-10">
+        <Button 
+          variant="outline" 
+          size="sm" 
+          disabled 
+          className="flex items-center gap-2"
+        >
+          <Languages className="h-4 w-4" />
+          Translate to Hindi
+        </Button>
+      </div>
+      
       {/* Header */}
       <Card>
         <CardHeader>

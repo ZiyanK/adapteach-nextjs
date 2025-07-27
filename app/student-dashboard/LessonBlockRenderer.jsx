@@ -3,6 +3,8 @@
 import React, { useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { gsap } from 'gsap';
+import { Button } from '@/components/ui/button';
+import { Languages } from 'lucide-react';
 
 // Text block renderer
 const TextBlock = ({ content }) => {
@@ -166,7 +168,20 @@ const AnimationBlock = ({ content }) => {
 export default function LessonBlockRenderer({ blocks }) {
   if (!blocks) return null;
   return (
-    <div>
+    <div className="relative">
+      {/* Translate Button */}
+      <div className="absolute top-4 right-4 z-10">
+        <Button 
+          variant="outline" 
+          size="sm" 
+          disabled 
+          className="flex items-center gap-2"
+        >
+          <Languages className="h-4 w-4" />
+          Translate to Hindi
+        </Button>
+      </div>
+      
       {blocks.map((block, index) => {
         const key = `${block.type}-${index}`;
         switch (block.type.toLowerCase()) {
