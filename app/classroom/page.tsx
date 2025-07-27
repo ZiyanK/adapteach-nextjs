@@ -5,7 +5,12 @@ import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, Users, BookOpen, GraduationCap } from "lucide-react"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Loader2, Users, BookOpen, GraduationCap, Plus } from "lucide-react"
 import { AuthService } from "@/lib/auth"
 
 interface Classroom {
@@ -25,6 +30,14 @@ export default function ClassroomSelectionPage() {
   const [classrooms, setClassrooms] = useState<Classroom[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [creatingClassroom, setCreatingClassroom] = useState(false)
+  const [createDialogOpen, setCreateDialogOpen] = useState(false)
+  const [newClassroom, setNewClassroom] = useState({
+    name: '',
+    description: '',
+    subject: '',
+    grade: 10
+  })
   const router = useRouter()
 
   useEffect(() => {
@@ -60,6 +73,57 @@ export default function ClassroomSelectionPage() {
     router.push(`/dashboard/${classroomId}`)
   }
 
+  const handleCreateClassroom = async () => {
+    setCreatingClassroom(true)
+    try {
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL
+      if (!backendUrl) {
+        throw new Error("NEXT_PUBLIC_BACKEND_URL environment variable is not set")
+      }
+
+      const response = await fetch(`${backendUrl}/api/teacher/classrooms`, {
+        method: 'POST',
+        headers: AuthService.getAuthHeaders(),
+        body: JSON.stringify(newClassroom),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.detail || errorData.message || `Failed to create classroom: ${response.status}`)
+      }
+
+      const createdClassroom = await response.json()
+      
+      // Add the new classroom to the list
+      setClassrooms(prev => [...prev, createdClassroom])
+      
+      // Reset form and close dialog
+      setNewClassroom({
+        name: '',
+        description: '',
+        subject: '',
+        grade: 10
+      })
+      setCreateDialogOpen(false)
+      
+      // Optionally navigate to the new classroom
+      router.push(`/dashboard/${createdClassroom.id}`)
+      
+    } catch (error) {
+      console.error("Error creating classroom:", error)
+      setError(error instanceof Error ? error.message : "Failed to create classroom")
+    } finally {
+      setCreatingClassroom(false)
+    }
+  }
+
+  const handleInputChange = (field: string, value: string | number) => {
+    setNewClassroom(prev => ({
+      ...prev,
+      [field]: value
+    }))
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -90,6 +154,98 @@ export default function ClassroomSelectionPage() {
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Select Your Classroom</h1>
           <p className="text-gray-600">Choose a classroom to access your dashboard</p>
+        </div>
+
+        {/* Create Classroom Button */}
+        <div className="flex justify-center mb-8">
+          <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+            <DialogTrigger asChild>
+              <Button className="bg-green-600 hover:bg-green-700 text-white">
+                <Plus className="h-4 w-4 mr-2" />
+                Create New Classroom
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[425px]">
+              <DialogHeader>
+                <DialogTitle>Create New Classroom</DialogTitle>
+                <DialogDescription>
+                  Fill in the details to create a new classroom for your students.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="name">Classroom Name</Label>
+                  <Input
+                    id="name"
+                    value={newClassroom.name}
+                    onChange={(e) => handleInputChange('name', e.target.value)}
+                    placeholder="e.g., 1A, Physics 101"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="description">Description</Label>
+                  <Textarea
+                    id="description"
+                    value={newClassroom.description}
+                    onChange={(e) => handleInputChange('description', e.target.value)}
+                    placeholder="Brief description of the classroom"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="subject">Subject</Label>
+                  <Select value={newClassroom.subject} onValueChange={(value) => handleInputChange('subject', value)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a subject" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Physics">Physics</SelectItem>
+                      <SelectItem value="Chemistry">Chemistry</SelectItem>
+                      <SelectItem value="Biology">Biology</SelectItem>
+                      <SelectItem value="Mathematics">Mathematics</SelectItem>
+                      <SelectItem value="English">English</SelectItem>
+                      <SelectItem value="History">History</SelectItem>
+                      <SelectItem value="Geography">Geography</SelectItem>
+                      <SelectItem value="Computer Science">Computer Science</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="grade">Grade Level</Label>
+                  <Select value={newClassroom.grade.toString()} onValueChange={(value) => handleInputChange('grade', parseInt(value))}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select grade level" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Array.from({ length: 12 }, (_, i) => i + 1).map(grade => (
+                        <SelectItem key={grade} value={grade.toString()}>
+                          Grade {grade}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="flex justify-end space-x-2">
+                <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button 
+                  onClick={handleCreateClassroom}
+                  disabled={creatingClassroom || !newClassroom.name || !newClassroom.subject}
+                  className="bg-green-600 hover:bg-green-700"
+                >
+                  {creatingClassroom ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Creating...
+                    </>
+                  ) : (
+                    'Create Classroom'
+                  )}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
         </div>
 
         {classrooms.length === 0 ? (
