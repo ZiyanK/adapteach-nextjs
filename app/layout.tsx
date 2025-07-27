@@ -6,9 +6,9 @@ import { AuthProvider } from '@/lib/auth-context'
 import { Toaster } from '@/components/ui/toaster'
 
 export const metadata: Metadata = {
-  title: 'v0 App',
-  description: 'Created with v0',
-  generator: 'v0.dev',
+  title: 'AdapTeach',
+  description: 'AdapTeach is a platform for teachers to create and manage their lesson plans.',
+  generator: 'AdapTeach',
 }
 
 export default function RootLayout({
