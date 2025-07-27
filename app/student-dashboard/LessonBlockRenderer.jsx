@@ -7,10 +7,10 @@ import { gsap } from 'gsap';
 // Text block renderer
 const TextBlock = ({ content }) => {
   const customComponents = {
-    h1: ({node, ...props}) => <h1 className="text-4xl font-bold text-white mb-4" {...props} />,
-    h2: ({node, ...props}) => <h2 className="text-2xl font-semibold text-blue-200 mb-3" {...props} />,
-    p: ({node, ...props}) => <p className="text-base text-blue-100 mb-2" {...props} />,
-    ul: ({node, ...props}) => <ul className="list-disc list-inside text-blue-100 mb-2" {...props} />,
+    h1: ({node, ...props}) => <h1 className="text-4xl font-bold text-black mb-4" {...props} />,
+    h2: ({node, ...props}) => <h2 className="text-2xl font-semibold text-gray-800 mb-3" {...props} />,
+    p: ({node, ...props}) => <p className="text-base text-gray-600 mb-2" {...props} />,
+    ul: ({node, ...props}) => <ul className="list-disc list-inside text-gray-600 mb-2" {...props} />,
     li: ({node, ...props}) => <li className="ml-4" {...props} />,
   };
   return (

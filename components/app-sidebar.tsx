@@ -35,6 +35,11 @@ export function AppSidebar() {
       icon: Calendar,
     },
     {
+      title: "Curriculum Selection",
+      url: classroomId ? `/dashboard/${classroomId}/curriculum-selection` : "/dashboard/curriculum-selection",
+      icon: BookOpen,
+    },
+    {
       title: "Students",
       url: classroomId ? `/dashboard/${classroomId}/students` : "/dashboard/students",
       icon: Users,

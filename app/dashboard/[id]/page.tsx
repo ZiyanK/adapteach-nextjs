@@ -1,39 +1,58 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useParams } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, BookOpen, CheckCircle, ArrowLeft } from "lucide-react"
+import { Loader2, BookOpen, ArrowLeft, Clock, Send, CheckCircle, XCircle } from "lucide-react"
 import { AuthService } from "@/lib/auth"
 import Link from "next/link"
+import { toast } from "@/hooks/use-toast"
 
-interface Section {
-  id: string
-  title: string
-  selected: boolean
+interface LearningOutcome {
+  outcome: string
+  bloomsLevel: string
+  actionVerb: string
 }
 
-interface Chapter {
-  chapter_number: number
-  title: string
-  sections: string[]
-  selected: boolean
-  sectionStates: Section[]
+interface DailyPlan {
+  day: string
+  focus: string
+  learningOutcome: string
+  duration: string
 }
 
-interface Curriculum {
-  id: string
-  class: number
+interface WeeklyPlan {
   subject: string
-  medium: string
-  chapters: Chapter[]
+  grade: number
+  weekOverview: string
+  dailyPlans: DailyPlan[]
+}
+
+interface LessonPlan {
+  id: string
+  classroom_id: string
   teacher_id: string
-  is_active: boolean
+  title: string
+  subject: string
+  grade: number
+  sections: string[]
+  learning_outcomes: {
+    subject: string
+    grade: number
+    topicSections: string[]
+    learningOutcomes: LearningOutcome[]
+  }
+  weekly_plan: WeeklyPlan
+  status: string
   created_at: string
   updated_at: string
+}
+
+interface LessonPlanResponse {
+  count: number
+  lesson_plans: LessonPlan[]
 }
 
 interface Classroom {
@@ -51,20 +70,20 @@ interface Classroom {
 
 export default function WeeklyPlannerPage() {
   const params = useParams()
+  const router = useRouter()
   const classroomId = params.id as string
   
-  const [curriculum, setCurriculum] = useState<Curriculum | null>(null)
-  const [allCurricula, setAllCurricula] = useState<Curriculum[]>([])
-  const [selectedCurriculumId, setSelectedCurriculumId] = useState<string>("")
   const [classroom, setClassroom] = useState<Classroom | null>(null)
+  const [currentLessonPlan, setCurrentLessonPlan] = useState<LessonPlan | null>(null)
   const [loading, setLoading] = useState(true)
-  const [generatingPlan, setGeneratingPlan] = useState(false)
-  const [weeklyPlan, setWeeklyPlan] = useState<string[] | null>(null)
+  const [loadingLessonPlan, setLoadingLessonPlan] = useState(false)
+  const [sendingStatus, setSendingStatus] = useState<Record<string, 'idle' | 'sending' | 'success' | 'error'>>({})
+  const [sendMessages, setSendMessages] = useState<Record<string, string>>({})
 
   useEffect(() => {
     if (classroomId) {
       fetchClassroom()
-      fetchCurriculum()
+      fetchCurrentLessonPlan()
     }
   }, [classroomId])
 
@@ -87,182 +106,184 @@ export default function WeeklyPlannerPage() {
       setClassroom(currentClassroom)
     } catch (error) {
       console.error("Error fetching classroom:", error)
-    }
-  }
-
-  const fetchCurriculum = async () => {
-    try {
-      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL
-      if (!backendUrl) {
-        throw new Error("NEXT_PUBLIC_BACKEND_URL environment variable is not set")
-      }
-
-      const response = await fetch(`${backendUrl}/api/teacher/textbooks`, {
-        headers: AuthService.getAuthHeaders(),
-      })
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-      
-      const data = await response.json()
-
-      console.log(data)
-
-      // Handle array response
-      const curricula = Array.isArray(data) ? data : [data]
-
-      if (curricula.length === 0) {
-        throw new Error("No curriculum data found")
-      }
-
-      setAllCurricula(curricula)
-
-      // Select the first curriculum by default
-      const firstCurriculum = curricula[0]
-      setSelectedCurriculumId(firstCurriculum.id)
-
-      // Transform data to include selection states
-      const transformedData = {
-        ...firstCurriculum,
-        chapters: firstCurriculum.chapters.map((chapter: any) => ({
-          ...chapter,
-          selected: false,
-          sectionStates: chapter.sections.map((section: string, index: number) => ({
-            id: `${chapter.chapter_number}-${index}`,
-            title: section,
-            selected: false,
-          })),
-        })),
-      }
-
-      console.log("transformedData", transformedData)
-
-      setCurriculum(transformedData)
-    } catch (error) {
-      console.error("Error fetching curriculum:", error)
     } finally {
       setLoading(false)
     }
   }
 
-  const toggleChapter = (chapterIndex: number) => {
-    if (!curriculum) return
+  const fetchCurrentLessonPlan = async () => {
+    try {
+      setLoadingLessonPlan(true)
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL
+      if (!backendUrl) {
+        throw new Error("NEXT_PUBLIC_BACKEND_URL environment variable is not set")
+      }
 
-    const newCurriculum = { ...curriculum }
-    const chapter = newCurriculum.chapters[chapterIndex]
-    chapter.selected = !chapter.selected
-
-    // Update all sections in the chapter
-    chapter.sectionStates = chapter.sectionStates.map((section) => ({
-      ...section,
-      selected: chapter.selected,
-    }))
-
-    setCurriculum(newCurriculum)
+      const response = await fetch(`${backendUrl}/api/teacher/lesson-plans?classroom_id=${classroomId}`, {
+        headers: AuthService.getAuthHeaders(),
+      })
+      
+      if (!response.ok) {
+        if (response.status === 404) {
+          // No lesson plan found, which is fine
+          setCurrentLessonPlan(null)
+          return
+        }
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+      
+      const data: LessonPlanResponse = await response.json()
+      
+      // Handle the new response structure with count and lesson_plans array
+      if (data.count > 0 && data.lesson_plans.length > 0) {
+        // Use the most recent lesson plan (first in the array)
+        setCurrentLessonPlan(data.lesson_plans[0])
+      } else {
+        setCurrentLessonPlan(null)
+      }
+    } catch (error) {
+      console.error("Error fetching current lesson plan:", error)
+      setCurrentLessonPlan(null)
+    } finally {
+      setLoadingLessonPlan(false)
+    }
   }
 
-  const toggleSection = (chapterIndex: number, sectionIndex: number) => {
-    if (!curriculum) return
-
-    const newCurriculum = { ...curriculum }
-    const chapter = newCurriculum.chapters[chapterIndex]
-    chapter.sectionStates[sectionIndex].selected = !chapter.sectionStates[sectionIndex].selected
-
-    // Update chapter selection based on sections
-    const allSectionsSelected = chapter.sectionStates.every((s) => s.selected)
-    const someSectionsSelected = chapter.sectionStates.some((s) => s.selected)
-    chapter.selected = allSectionsSelected
-
-    setCurriculum(newCurriculum)
+  const getCurrentDayPlan = () => {
+    if (!currentLessonPlan?.weekly_plan?.dailyPlans) return null
+    
+    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+    const today = new Date().toLocaleDateString('en-US', { weekday: 'long' })
+    return currentLessonPlan.weekly_plan.dailyPlans.find(plan => plan.day === today) || null
   }
 
-  const generateWeeklyPlan = async () => {
-    if (!curriculum) return
+  const getTomorrowPlan = () => {
+    if (!currentLessonPlan?.weekly_plan?.dailyPlans) return null
+    
+    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+    const today = new Date()
+    const tomorrow = new Date(today)
+    tomorrow.setDate(today.getDate() + 1)
+    const tomorrowDay = tomorrow.toLocaleDateString('en-US', { weekday: 'long' })
+    return currentLessonPlan.weekly_plan.dailyPlans.find(plan => plan.day === tomorrowDay) || null
+  }
 
-    setGeneratingPlan(true)
+  const sendLessonToStudents = async (day: string) => {
+    if (!currentLessonPlan) return
+
+    setSendingStatus(prev => ({ ...prev, [day]: 'sending' }))
+    setSendMessages(prev => ({ ...prev, [day]: '' }))
+
     try {
       const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL
       if (!backendUrl) {
         throw new Error("NEXT_PUBLIC_BACKEND_URL environment variable is not set")
       }
 
-      const selectedSections = curriculum.chapters.flatMap((chapter) =>
-        chapter.sectionStates
-          .filter((section) => section.selected)
-          .map((section) => section.title),
-      )
-
-      const requestBody = {
-        grade: curriculum.class,
-        subject: curriculum.subject,
-        sections: selectedSections,
-        classroom_id: classroomId,
-      }
-
-      const response = await fetch(`${backendUrl}/api/teacher/lesson-plan`, {
-        method: "POST",
+      const response = await fetch(`${backendUrl}/api/teacher/lesson-plans/student-lessons`, {
+        method: 'POST',
         headers: AuthService.getAuthHeaders(),
-        body: JSON.stringify(requestBody),
+        body: JSON.stringify({
+          lesson_plan_id: currentLessonPlan.id,
+          day: day
+        }),
       })
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.detail || errorData.message || `Failed to send lesson: ${response.status}`)
       }
 
       const data = await response.json()
-      setWeeklyPlan(data.weeklyPlan)
+      setSendingStatus(prev => ({ ...prev, [day]: 'success' }))
+      setSendMessages(prev => ({ ...prev, [day]: 'Lesson sent successfully!' }))
+      
+      toast({
+        title: "Success",
+        description: `Lesson for ${day} has been sent to students.`,
+      })
+
+      // Reset success status after 3 seconds
+      setTimeout(() => {
+        setSendingStatus(prev => ({ ...prev, [day]: 'idle' }))
+        setSendMessages(prev => ({ ...prev, [day]: '' }))
+      }, 3000)
+
     } catch (error) {
-      console.error("Error generating weekly plan:", error)
-    } finally {
-      setGeneratingPlan(false)
+      console.error(`Error sending lesson for ${day}:`, error)
+      setSendingStatus(prev => ({ ...prev, [day]: 'error' }))
+      setSendMessages(prev => ({ ...prev, [day]: error instanceof Error ? error.message : 'Failed to send lesson' }))
+      
+      toast({
+        title: "Error",
+        description: `Failed to send lesson for ${day}. Please try again.`,
+        variant: "destructive",
+      })
+
+      // Reset error status after 5 seconds
+      setTimeout(() => {
+        setSendingStatus(prev => ({ ...prev, [day]: 'idle' }))
+        setSendMessages(prev => ({ ...prev, [day]: '' }))
+      }, 5000)
     }
   }
 
-  const handleCurriculumChange = (curriculumId: string) => {
-    const selectedCurriculum = allCurricula.find(c => c.id === curriculumId)
-    if (selectedCurriculum) {
-      setSelectedCurriculumId(curriculumId)
-      
-      // Transform the selected curriculum
-      const transformedData = {
-        ...selectedCurriculum,
-        chapters: selectedCurriculum.chapters.map((chapter: any) => ({
-          ...chapter,
-          selected: false,
-          sectionStates: chapter.sections.map((section: string, index: number) => ({
-            id: `${chapter.chapter_number}-${index}`,
-            title: section,
-            selected: false,
-          })),
-        })),
-      }
-      
-      setCurriculum(transformedData)
-      setWeeklyPlan(null) // Clear previous plan when curriculum changes
+  const getSendButtonContent = (day: string) => {
+    const status = sendingStatus[day] || 'idle'
+    
+    switch (status) {
+      case 'sending':
+        return (
+          <>
+            <Loader2 className="h-4 w-4 animate-spin mr-2" />
+            Sending...
+          </>
+        )
+      case 'success':
+        return (
+          <>
+            <CheckCircle className="h-4 w-4 mr-2" />
+            Sent
+          </>
+        )
+      case 'error':
+        return (
+          <>
+            <XCircle className="h-4 w-4 mr-2" />
+            Failed
+          </>
+        )
+      default:
+        return (
+          <>
+            <Send className="h-4 w-4 mr-2" />
+            Send
+          </>
+        )
     }
   }
 
-  const hasSelectedItems = curriculum?.chapters.some((chapter) =>
-    chapter.sectionStates.some((section) => section.selected),
-  )
+  const getSendButtonVariant = (day: string) => {
+    const status = sendingStatus[day] || 'idle'
+    
+    switch (status) {
+      case 'sending':
+        return 'secondary'
+      case 'success':
+        return 'default'
+      case 'error':
+        return 'destructive'
+      default:
+        return 'default'
+    }
+  }
 
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
         <div className="text-center">
           <Loader2 className="h-8 w-8 animate-spin text-blue-600 mx-auto mb-4" />
-          <p className="text-gray-600">Loading curriculum data...</p>
-        </div>
-      </div>
-    )
-  }
-
-  if (!curriculum) {
-    return (
-      <div className="flex items-center justify-center h-96">
-        <div className="text-center">
-          <BookOpen className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-          <p className="text-gray-600">No curriculum data available</p>
+          <p className="text-gray-600">Loading dashboard...</p>
         </div>
       </div>
     )
@@ -287,55 +308,149 @@ export default function WeeklyPlannerPage() {
             )}
           </div>
         </div>
-        <Button
-          onClick={generateWeeklyPlan}
-          disabled={!hasSelectedItems || generatingPlan}
+        {/* <Button
+          onClick={() => router.push(`/dashboard/${classroomId}/curriculum-selection`)}
           className="bg-blue-600 hover:bg-blue-700"
         >
-          {generatingPlan ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Generating...
-            </>
-          ) : (
-            "Generate Weekly Plan"
-          )}
-        </Button>
+          Generate Weekly Plan
+        </Button> */}
       </div>
 
-      {allCurricula.length > 1 && (
+      {/* Current Lesson Plan Section */}
+      {loadingLessonPlan ? (
+        <Card className="mb-6">
+          <CardContent className="py-8">
+            <div className="text-center">
+              <Loader2 className="h-6 w-6 animate-spin text-blue-600 mx-auto mb-2" />
+              <p className="text-gray-600">Loading current lesson plan...</p>
+            </div>
+          </CardContent>
+        </Card>
+      ) : currentLessonPlan ? (
         <Card className="mb-6">
           <CardHeader>
-            <CardTitle className="text-lg">Select Curriculum</CardTitle>
-            <CardDescription>Choose the curriculum you want to work with</CardDescription>
+            <CardTitle className="flex items-center gap-2">
+              <BookOpen className="h-5 w-5 text-blue-600" />
+              Current Lesson Plan
+            </CardTitle>
+            <CardDescription>
+              {currentLessonPlan.title}
+            </CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {allCurricula.map((curr) => (
-                <div
-                  key={curr.id}
-                  className={`p-4 border rounded-lg cursor-pointer transition-colors ${
-                    selectedCurriculumId === curr.id
-                      ? 'border-blue-500 bg-blue-50'
-                      : 'border-gray-200 hover:border-gray-300'
-                  }`}
-                  onClick={() => handleCurriculumChange(curr.id)}
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <h3 className="font-medium">{curr.subject}</h3>
-                    {selectedCurriculumId === curr.id && (
-                      <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                    )}
+          <CardContent className="space-y-6">
+            {/* Weekly Learning Outcomes */}
+            <div>
+              <h3 className="text-lg font-semibold mb-3">Weekly Learning Outcomes</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {currentLessonPlan.learning_outcomes.learningOutcomes.map((outcome, index) => (
+                  <div key={index} className="p-3 border rounded-lg bg-gray-50">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Badge variant="outline" className="text-xs">
+                        {outcome.bloomsLevel}
+                      </Badge>
+                      <Badge variant="outline" className="text-xs">
+                        {outcome.actionVerb}
+                      </Badge>
+                    </div>
+                    <p className="text-sm text-gray-700">{outcome.outcome}</p>
                   </div>
-                  <div className="flex gap-2 text-sm text-gray-600">
-                    <Badge variant="outline">Class {curr.class}</Badge>
-                    <Badge variant="outline">{curr.medium}</Badge>
+                ))}
+              </div>
+            </div>
+
+            {/* Complete Weekly Plan */}
+            <div>
+              <h3 className="text-lg font-semibold mb-3">Weekly Schedule</h3>
+              <div className="space-y-4">
+                {currentLessonPlan.weekly_plan.dailyPlans.map((dayPlan, index) => (
+                  <div key={index} className="border rounded-lg p-4 bg-white shadow-sm">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-2">
+                          <h4 className="font-medium text-gray-900">{dayPlan.day}</h4>
+                          <Badge variant="secondary">{dayPlan.duration}</Badge>
+                        </div>
+                        <p className="text-sm font-medium text-blue-600 mb-1">{dayPlan.focus}</p>
+                        <p className="text-sm text-gray-700">{dayPlan.learningOutcome}</p>
+                      </div>
+                      <div className="flex flex-col items-end gap-2 ml-4">
+                        <Button
+                          onClick={() => sendLessonToStudents(dayPlan.day)}
+                          disabled={sendingStatus[dayPlan.day] === 'sending'}
+                          variant={getSendButtonVariant(dayPlan.day)}
+                          size="sm"
+                          className="min-w-[100px]"
+                        >
+                          {getSendButtonContent(dayPlan.day)}
+                        </Button>
+                        {sendMessages[dayPlan.day] && (
+                          <p className={`text-xs ${
+                            sendingStatus[dayPlan.day] === 'success' 
+                              ? 'text-green-600' 
+                              : sendingStatus[dayPlan.day] === 'error' 
+                                ? 'text-red-600' 
+                                : 'text-gray-600'
+                          }`}>
+                            {sendMessages[dayPlan.day]}
+                          </p>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                  <p className="text-xs text-gray-500 mt-2">
-                    {curr.chapters.length} chapters
-                  </p>
+                ))}
+              </div>
+            </div>
+
+            {/* Today's Plan */}
+            {getCurrentDayPlan() && (
+              <div>
+                <h3 className="text-lg font-semibold mb-3">Today's Plan</h3>
+                <div className="border rounded-lg p-4 bg-blue-50">
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="font-medium text-blue-900">{getCurrentDayPlan()?.day} - {getCurrentDayPlan()?.focus}</h4>
+                    <Badge variant="secondary">{getCurrentDayPlan()?.duration}</Badge>
+                  </div>
+                  <p className="text-sm text-gray-700 mb-3">{getCurrentDayPlan()?.learningOutcome}</p>
+                  
+                  <div className="mt-3">
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <Clock className="h-4 w-4" />
+                      <span>Duration: {getCurrentDayPlan()?.duration}</span>
+                    </div>
+                  </div>
                 </div>
-              ))}
+              </div>
+            )}
+
+            {/* Tomorrow's Plan */}
+            {getTomorrowPlan() && (
+              <div>
+                <h3 className="text-lg font-semibold mb-3">Tomorrow's Plan</h3>
+                <div className="border rounded-lg p-4 bg-green-50">
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="font-medium text-green-900">{getTomorrowPlan()?.day} - {getTomorrowPlan()?.focus}</h4>
+                    <Badge variant="secondary">{getTomorrowPlan()?.duration}</Badge>
+                  </div>
+                  <p className="text-sm text-gray-700 mb-3">{getTomorrowPlan()?.learningOutcome}</p>
+                  
+                  <div className="mt-3">
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <Clock className="h-4 w-4" />
+                      <span>Duration: {getTomorrowPlan()?.duration}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      ) : (
+        <Card className="mb-6">
+          <CardContent className="py-8">
+            <div className="text-center">
+              <BookOpen className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">No Current Lesson Plan</h3>
+              <p className="text-gray-600">Create a new lesson plan by selecting curriculum topics below.</p>
             </div>
           </CardContent>
         </Card>
@@ -346,82 +461,53 @@ export default function WeeklyPlannerPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <BookOpen className="h-5 w-5 text-blue-600" />
-              Curriculum Selection
+              Quick Actions
             </CardTitle>
             <CardDescription>
-              {curriculum && (
-                <div className="flex gap-2">
-                  <Badge variant="secondary">Class {curriculum.class}</Badge>
-                  <Badge variant="secondary">{curriculum.subject}</Badge>
-                  <Badge variant="secondary">{curriculum.medium}</Badge>
-                </div>
-              )}
+              Manage your lesson plans and curriculum
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {curriculum?.chapters.map((chapter, chapterIndex) => (
-              <div key={chapter.chapter_number} className="border rounded-lg p-4">
-                <div className="flex items-center space-x-2 mb-3">
-                  <Checkbox
-                    id={`chapter-${chapter.chapter_number}`}
-                    checked={chapter.selected}
-                    onCheckedChange={() => toggleChapter(chapterIndex)}
-                  />
-                  <label
-                    htmlFor={`chapter-${chapter.chapter_number}`}
-                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
-                  >
-                    Chapter {chapter.chapter_number}: {chapter.title}
-                  </label>
-                </div>
-
-                <div className="ml-6 space-y-2">
-                  {chapter.sectionStates.map((section, sectionIndex) => (
-                    <div key={section.id} className="flex items-center space-x-2">
-                      <Checkbox
-                        id={section.id}
-                        checked={section.selected}
-                        onCheckedChange={() => toggleSection(chapterIndex, sectionIndex)}
-                      />
-                      <label htmlFor={section.id} className="text-sm text-gray-600 cursor-pointer">
-                        {section.title}
-                      </label>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
+            <div className="p-4 border rounded-lg bg-blue-50">
+              <h3 className="font-medium text-blue-900 mb-2">Create New Lesson Plan</h3>
+              <p className="text-sm text-blue-700 mb-3">
+                Select curriculum topics and generate a personalized weekly lesson plan.
+              </p>
+              <Button 
+                onClick={() => router.push(`/dashboard/${classroomId}/curriculum-selection`)}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                Start Planning
+              </Button>
+            </div>
+            
+            <div className="p-4 border rounded-lg bg-green-50">
+              <h3 className="font-medium text-green-900 mb-2">View Current Plans</h3>
+              <p className="text-sm text-green-700 mb-3">
+                Access your existing lesson plans and learning outcomes.
+              </p>
+              <p className="text-xs text-green-600">
+                Your current lesson plan is displayed above.
+              </p>
+            </div>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <CheckCircle className="h-5 w-5 text-green-600" />
-              Generated Weekly Plan
+              <BookOpen className="h-5 w-5 text-green-600" />
+              Recent Activity
             </CardTitle>
-            <CardDescription>Your personalized lesson plan based on selected topics</CardDescription>
+            <CardDescription>Your latest lesson planning activity</CardDescription>
           </CardHeader>
           <CardContent>
-            {weeklyPlan ? (
-              <div className="space-y-3">
-                {weeklyPlan.map((lesson, index) => (
-                  <div key={index} className="flex items-start gap-3 p-3 bg-blue-50 rounded-lg">
-                    <div className="flex-shrink-0 w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium">
-                      {index + 1}
-                    </div>
-                    <p className="text-sm text-gray-700">{lesson}</p>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-8 text-gray-500">
-                <BookOpen className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                <p>
-                  Select curriculum topics and click "Generate Weekly Plan" to see your personalized lesson plan here.
-                </p>
-              </div>
-            )}
+            <div className="text-center py-8 text-gray-500">
+              <BookOpen className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+              <p>
+                Your lesson planning activity will appear here.
+              </p>
+            </div>
           </CardContent>
         </Card>
       </div>
