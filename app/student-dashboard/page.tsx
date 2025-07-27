@@ -9,7 +9,6 @@ import { Calendar, BookOpen, Clock, User } from 'lucide-react';
 import LessonBlockRenderer from './LessonBlockRenderer';
 import AssessmentForm from './AssessmentForm';
 import { AuthService } from '@/lib/auth';
-import { sampleAssessmentData } from './sample-assessment-data';
 
 interface LearningMaterial {
   lesson: Array<{
@@ -18,13 +17,14 @@ interface LearningMaterial {
     description?: string;
     animation_description?: string;
   }>;
-  assessment?: Array<{
-    question: string;
-    options?: string[];
-    correct_answer?: string;
-    rationale?: string;
-    type?: 'mcq' | 'text';
-  }>;
+}
+
+interface Assessment {
+  question: string;
+  options?: string[];
+  correct_answer?: string;
+  rationale?: string;
+  type?: 'mcq' | 'text';
 }
 
 interface StudentLessonPlan {
@@ -33,7 +33,7 @@ interface StudentLessonPlan {
   student_id: string;
   day: string;
   lesson: any;
-  assessment: any;
+  assessment: Assessment[];
   outcome: string;
   assessment_answers: any;
   follow_up_lesson: any;
@@ -81,12 +81,9 @@ export default function StudentDashboardPage() {
 
       const data: LessonPlansResponse = await response.json();
 
-      console.log(data);
-      
-      // Add sample assessment data to the first lesson plan for testing
-      if (data.student_lesson_plans.length > 0) {
-        data.student_lesson_plans[0].learning_material.assessment = sampleAssessmentData;
-      }
+      console.log('Full API response:', data);
+      console.log('First lesson plan:', data.student_lesson_plans[0]);
+      console.log('Assessment data:', data.student_lesson_plans[0]?.assessment);
       
       setLessonPlans(data.student_lesson_plans);
 
@@ -270,15 +267,19 @@ export default function StudentDashboardPage() {
                   <Badge className={getStatusColor(getDayStatus(selectedDay))}>
                     {getStatusText(getDayStatus(selectedDay))}
                   </Badge>
-                  {getSelectedDayPlan()?.learning_material?.assessment && (
-                    <Button
-                      variant={showAssessment ? "default" : "outline"}
-                      onClick={() => setShowAssessment(!showAssessment)}
-                      className="ml-2"
-                    >
-                      {showAssessment ? "Show Lesson" : "Take Assessment"}
-                    </Button>
-                  )}
+                  {/* Show button if assessment exists */}
+                  {(() => {
+                    const selectedPlan = getSelectedDayPlan();
+                    return selectedPlan?.assessment && selectedPlan.assessment.length > 0 ? (
+                      <Button
+                        variant={showAssessment ? "default" : "outline"}
+                        onClick={() => setShowAssessment(!showAssessment)}
+                        className="ml-2"
+                      >
+                        {showAssessment ? "Show Lesson" : "Take Assessment"}
+                      </Button>
+                    ) : null;
+                  })()}
                 </div>
               </div>
             </div>
@@ -288,16 +289,32 @@ export default function StudentDashboardPage() {
               <div className="p-6">
                 {(() => {
                   const selectedPlan = getSelectedDayPlan();
-                  const assessment = selectedPlan?.learning_material?.assessment;
+                  const assessment = selectedPlan?.assessment;
                   
-                  if (showAssessment && assessment && assessment.length > 0) {
-                    return (
-                      <AssessmentForm
-                        questions={assessment}
-                        onSubmit={handleAssessmentSubmit}
-                        isSubmitting={submittingAssessment}
-                      />
-                    );
+                  if (showAssessment) {
+                    // If no assessment data, show a placeholder or sample data
+                    if (assessment && assessment.length > 0) {
+                      return (
+                        <AssessmentForm
+                          questions={assessment}
+                          onSubmit={handleAssessmentSubmit}
+                          isSubmitting={submittingAssessment}
+                        />
+                      );
+                    } else {
+                      // Show placeholder when no assessment data is available
+                      return (
+                        <div className="text-center py-12">
+                          <BookOpen className="h-16 w-16 text-gray-400 mx-auto mb-4" />
+                          <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                            Assessment Not Available
+                          </h3>
+                          <p className="text-gray-500">
+                            The assessment for {selectedDay} is not yet available.
+                          </p>
+                        </div>
+                      );
+                    }
                   } else if (selectedPlan?.learning_material?.lesson) {
                     return (
                       <div className="max-w-4xl mx-auto">
